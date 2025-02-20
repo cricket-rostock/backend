@@ -13,6 +13,7 @@ namespace API.Controllers
             "Mild",
             "Warm",
             "Balmy",
+            "Sweaty",
             "Hot",
             "Sweltering",
             "Scorching"
