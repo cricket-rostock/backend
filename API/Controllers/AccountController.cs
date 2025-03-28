@@ -6,60 +6,61 @@ using API.Entities;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
-namespace API.Controllers
+namespace API.Controllers;
+
+public class AccountController : BaseAPIController
 {
-    public class AccountController : BaseAPIController
+    private readonly DataContext _dbContext;
+
+    public AccountController(DataContext dbContext)
     {
-        private readonly DataContext _dbContext;
+        this._dbContext = dbContext;
+    }
 
-        public AccountController(DataContext dbContext)
+    [HttpPost("Register")]
+    public async Task<ActionResult<AppUser>> Register(RegisterDto registerDto)
+    {
+        if (await CheckIfUserExits(registerDto.Username))
         {
-            this._dbContext = dbContext;
+            return BadRequest("User already exists");
         }
-
-        [HttpPost("Register")]
-        public async Task<ActionResult<AppUser>> Register(RegisterDto registerDto)
+        else
         {
-            if (await CheckIfUserExits(registerDto.Username))
+            using var hmac = new HMACSHA512();
+            var user = new AppUser
             {
-                return BadRequest("User already exists");
-            }
-            else
-            {
-                using var hmac = new HMACSHA512();
-                var user = new AppUser
-                {
-                    Id = registerDto.Id,
-                    Username = registerDto.Username,
-                    PasswordHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(registerDto.Password)),
-                    PasswordSalt = hmac.Key
-                };
-
-                _dbContext.Users.Add(user);
-                await _dbContext.SaveChangesAsync();
-                return user;
-            }
+                Id = registerDto.Id,
+                Username = registerDto.Username,
+                FirstName = "",
+                LastName = "",
+                PromptPasswordReset = true,
+                PasswordHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(registerDto.Password)),
+                PasswordSalt = hmac.Key
+            };
+            _dbContext.Users.Add(user);
+            await _dbContext.SaveChangesAsync();
+            return user;
         }
+    }
 
-        private async Task<bool> CheckIfUserExits(string username)
+    private async Task<bool> CheckIfUserExits(string username)
+    {
+        return await _dbContext.Users.AnyAsync(x => x.Username.ToLower() == username.ToLower());
+    }
+
+    [HttpPost("RemoveUser/{id}")]
+    public async Task<IActionResult> RemoveUserByIdAsync(int id)
+    {
+        var userToRemove = await this._dbContext.Users.FindAsync(id); // Find the user with the given ID asynchronously
+        if (userToRemove != null)
         {
-            return await _dbContext.Users.AnyAsync(x => x.Username.ToLower() == username.ToLower());
+            this._dbContext.Users.Remove(userToRemove); // Remove the user
+            await this._dbContext.SaveChangesAsync(); // Save changes to the database asynchronously
+            return Ok($"User {userToRemove.Username} with ID {id} has been removed.");
         }
-
-        [HttpPost("RemoveUser/{id}")]
-        public async Task<IActionResult> RemoveUserByIdAsync(int id)
+        else
         {
-            var userToRemove = await this._dbContext.Users.FindAsync(id); // Find the user with the given ID asynchronously
-            if (userToRemove != null)
-            {
-                this._dbContext.Users.Remove(userToRemove); // Remove the user
-                await this._dbContext.SaveChangesAsync(); // Save changes to the database asynchronously
-                return Ok($"User {userToRemove.Username} with ID {id} has been removed.");
-            }
-            else
-            {
-                return NotFound($"User with ID {id} not found.");
-            }
+            return NotFound($"User with ID {id} not found.");
         }
     }
 }
