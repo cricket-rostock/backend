@@ -12,15 +12,30 @@ public class AccountController : BaseAPIController
 {
     private readonly DataContext _dbContext;
 
-    public AccountController(DataContext dbContext)
+    public AccountController(DataContext dbContext) => this._dbContext = dbContext;
+
+    [HttpPost("Login")]
+    public async Task<ActionResult<AppUser>> Login(LoginDto loginDto)
     {
-        this._dbContext = dbContext;
+        var user = await _dbContext.Users.FirstOrDefaultAsync<AppUser>(
+            x => x.Username == loginDto.Username.ToLower()
+        );
+        if (user == null)
+            return Unauthorized("Invalid username");
+        using var hmac = new HMACSHA512(user.PasswordSalt);
+        var computedHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(loginDto.Password));
+        for (int i = 0; i < computedHash.Length; i++)
+        {
+            if (computedHash[i] != user.PasswordHash[i])
+                return Unauthorized("Invalid Password");
+        }
+        return user;
     }
 
     [HttpPost("Register")]
     public async Task<ActionResult<AppUser>> Register(RegisterDto registerDto)
     {
-        if (await CheckIfUserExits(registerDto.Username))
+        if (await UserExits(registerDto.Username))
         {
             return BadRequest("User already exists");
         }
@@ -29,10 +44,11 @@ public class AccountController : BaseAPIController
             using var hmac = new HMACSHA512();
             var user = new AppUser
             {
-                Id = registerDto.Id,
-                Username = registerDto.Username,
-                FirstName = "",
-                LastName = "",
+                Id = Guid.NewGuid(),
+                Username = registerDto.Username.ToLower(),
+                FirstName = registerDto.FirstName,
+                LastName = registerDto.LastName,
+                GivenName = $"{registerDto.FirstName} {registerDto.LastName}",
                 PromptPasswordReset = true,
                 PasswordHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(registerDto.Password)),
                 PasswordSalt = hmac.Key
@@ -43,24 +59,8 @@ public class AccountController : BaseAPIController
         }
     }
 
-    private async Task<bool> CheckIfUserExits(string username)
+    private async Task<bool> UserExits(string username)
     {
         return await _dbContext.Users.AnyAsync(x => x.Username.ToLower() == username.ToLower());
-    }
-
-    [HttpPost("RemoveUser/{id}")]
-    public async Task<IActionResult> RemoveUserByIdAsync(int id)
-    {
-        var userToRemove = await this._dbContext.Users.FindAsync(id); // Find the user with the given ID asynchronously
-        if (userToRemove != null)
-        {
-            this._dbContext.Users.Remove(userToRemove); // Remove the user
-            await this._dbContext.SaveChangesAsync(); // Save changes to the database asynchronously
-            return Ok($"User {userToRemove.Username} with ID {id} has been removed.");
-        }
-        else
-        {
-            return NotFound($"User with ID {id} not found.");
-        }
     }
 }
